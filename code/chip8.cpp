@@ -306,9 +306,12 @@ main(int ArgumentNumber, char *Arguments[])
     glMatrixMode(GL_PROJECTION);
     glOrtho(0, Window.Width, 0, Window.Height, -1, 1);
 
+    // NOTE(miha): Time target is 60 times per second (60 Hz).
+    double TimeTarget = 1.0f / 60.0f; 
     // NOTE(miha): Main loop. All the magic happens here.
     while(!glfwWindowShouldClose(Window.GLFWWindow))
     {
+        double FrameStartTime = glfwGetTime();
         GLFWClearScreen(&Window);
 
         // TODO: Move this to the new function
@@ -339,6 +342,15 @@ main(int ArgumentNumber, char *Arguments[])
 
         PrintKeyboard(&Chip8);
         GLFWUpdate(&Window);
+
+        double FrameEndTime = glfwGetTime();
+        while(FrameEndTime < (FrameStartTime + TimeTarget))
+        {
+            FrameEndTime = glfwGetTime();
+        }
+
+        double MSPerFrame = (FrameEndTime - FrameStartTime) * 1000;
+        printf("%f\n", MSPerFrame);
     }
 
     printf("hello world!\n");
