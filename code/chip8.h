@@ -36,34 +36,41 @@ struct glfw_window
 // TODO(miha): I dont know the size of void * registers
 struct chip8_registers
 {
-    u8 V0;
-    u8 V1;
-    u8 V2;
-    u8 V3;
-    u8 V4;
-    u8 V5;
-    u8 V6;
-    u8 V7;
-    u8 V8;
-    u8 V9;
-    u8 VA;
-    u8 VB;
-    u8 VC;
-    u8 VD;
-    u8 VE;
-    u8 VF;
-    u16 I;
-    u16 PC;
-    u8 SP;
+    union
+    {
+        struct
+        {
+            u8 V0;
+            u8 V1;
+            u8 V2;
+            u8 V3;
+            u8 V4;
+            u8 V5;
+            u8 V6;
+            u8 V7;
+            u8 V8;
+            u8 V9;
+            u8 VA;
+            u8 VB;
+            u8 VC;
+            u8 VD;
+            u8 VE;
+            u8 VF;
 
-    void *DT;
-    void *ST;
+            u16 I;
+            u16 PC;
+            u8 SP;
+        };
+
+        // CARE(miha): With array we can only acces first 16 registers..
+        u16 E[22];
+    };
+
 };
 
 struct chip8_key
 {
     i32 KeyCode;
-    b32 PressedDown;
     b32 IsPressed;
 };
 
@@ -101,12 +108,19 @@ struct chip8_keyboard
     };
 };
 
+struct chip8_timer
+{
+    i32 Value;
+};
+
 struct chip8
 {
     u8 Memory[4096];
     u8 Display[64 * 32];
     chip8_registers Registers;
     chip8_keyboard Keyboard;
+    chip8_timer SoundTimer;
+    chip8_timer DelayTimer;
 };
 
 #endif // CHIP8_H

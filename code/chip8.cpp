@@ -124,32 +124,21 @@ PrintKeyboard(chip8 *Chip8)
 void
 ProcessInput(glfw_window *Window, chip8 *Chip8)
 {
+    if (glfwGetKey(Window->GLFWWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(Window->GLFWWindow, GLFW_TRUE);
+
     for(u32 KeyIndex = 0; KeyIndex < Chip8->Keyboard.NumberOfKeys; ++KeyIndex)
     {
         if(glfwGetKey(Window->GLFWWindow, 
            Chip8->Keyboard.Keys[KeyIndex].KeyCode) == GLFW_PRESS)
         {
-            Chip8->Keyboard.Keys[KeyIndex].PressedDown = 1;
+            Chip8->Keyboard.Keys[KeyIndex].IsPressed = 1;
         }
 
         if(glfwGetKey(Window->GLFWWindow,
            Chip8->Keyboard.Keys[KeyIndex].KeyCode) == GLFW_RELEASE)
         {
-            Chip8->Keyboard.Keys[KeyIndex].PressedDown = 0;
-        }
-
-        // NOTE(miha): First frame key is pressed.
-        if(Chip8->Keyboard.Keys[KeyIndex].PressedDown == 1 && 
-           Chip8->Keyboard.Keys[KeyIndex].IsPressed == 0)
-        {
-           Chip8->Keyboard.Keys[KeyIndex].IsPressed = 1;
-        }
-
-        // NOTE(miha): Last frame key is pressed.
-        if(Chip8->Keyboard.Keys[KeyIndex].PressedDown == 0 && 
-           Chip8->Keyboard.Keys[KeyIndex].IsPressed == 1)
-        {
-           Chip8->Keyboard.Keys[KeyIndex].IsPressed = 0;
+            Chip8->Keyboard.Keys[KeyIndex].IsPressed = 0;
         }
     }
 }
@@ -222,6 +211,264 @@ InitBuildInCharacters(chip8 *Chip8)
 void
 FetchDecodeExecute(chip8 *Chip8)
 {
+    // NOTE(miha): Fetch instruction.
+    u16 *PC = &Chip8->Registers.PC;
+    u8 InstuctionFirstHalf = Chip8->Memory[*PC];
+    u8 InstuctionSecondHalf = Chip8->Memory[*PC + 1];
+    u16 Instruction = InstuctionFirstHalf << 8 | InstuctionSecondHalf;
+    // TODO(miha): Are we sure we want to increment PC here? What about
+    // branching instructions?...
+    *PC += 2;
+
+    // TODO: Decode instuction
+
+    u16 InstructionMSB = ((Instruction & 0xF000) >> 12);
+
+    // NOTE(miha): Some instruction 
+    switch(InstructionMSB)
+    {
+        case 0:
+        {
+            i16 InstructionSecondDecode = Instruction & 0x00F0;
+
+            switch(InstructionSecondDecode)
+            {
+                case 0xE:
+                {
+                    i16 InstructionThridDecode = Instruction & 0x000F;
+
+                    if(InstructionThridDecode == 0x0)
+                    {
+                        // NOTE(miha): Opcode 00E0 - clears the screen.
+                        // TODO(miha): Function to clear the screen - set all
+                        // bits in buffer to 0.
+                    }
+                    else if (InstructionThridDecode == 0xE)
+                    {
+                        // NOTE(miha): Opcode 00EE - returns from subroutine.
+                        // TODO(miha): Do we need to pop address from stack or
+                        // someting?
+
+                    }
+                } break;
+
+                default:
+                {
+                    // NOTE(miha): 0NNN opcode.
+                    u16 Number = Instruction & 0x0FFF;
+                    // TODO(miha): Implement this opcode
+
+                } break;
+            }
+
+        } break;
+
+        case 1:
+        {
+            // NOTE(miha): Jump to address NNN.
+            u16 Address = Instruction & 0x0FFF;
+            Chip8->Registers.PC = Address;
+        } break;
+
+        case 2:
+        {
+            // NOTE(miha): Call subroutine at NNN.
+            // TODO(miha): Do we just set PC to this address or do we have to
+            // put someting on the stack?
+            u16 Subroutine = Instruction & 0x0FFF;
+        } break;
+
+        case 3:
+        {
+            // NOTE(miha): Skips the next instruction if VX equals NN.
+            u16 Register = (Instruction & 0x0F00) >> 8;
+            u16 Number = Instruction & 0x00FF;
+
+            if(Chip8->Registers.E[Register] == Number)
+            {
+                *PC += 2;
+            }
+        } break;
+
+        case 4:
+        {
+            // NOTE(miha): Skips the next instruction if VX does not equal NN.
+            u16 Register = (Instruction & 0x0F00) >> 8;
+            u16 Number = Instruction & 0x00FF;
+
+            if(Chip8->Registers.E[Register] != Number)
+            {
+                *PC += 2;
+            }
+        } break;
+
+        case 5:
+        {
+            // NOTE(miha): Skips the next instruction if VX equals VY.
+            u16 RegisterV = (Instruction & 0x0F00) >> 8;
+            u16 RegisterY = (Instruction & 0x00F0) >> 4;
+
+            if(Chip8->Registers.E[RegisterV] == Chip8->Registers.E[RegisterY])
+            {
+                *PC += 2;
+            }
+        } break;
+
+        case 6:
+        {
+            // NOTE(miha): Set VX to NN.
+            u16 Register = (Instruction & 0x0F00) >> 8;
+            u16 Number = Instruction & 0x00FF;
+            Chip8->Registers.E[Register] = Number;
+        } break;
+
+        case 7:
+        {
+            // NOTE(miha): Adds NN to VX.
+            u16 Register = (Instruction & 0x0F00) >> 8;
+            u16 Number = Instruction & 0x00FF;
+            Chip8->Registers.E[Register] += Number;
+        } break;
+
+        case 8:
+        {
+            u16 RegisterX = (Instruction & 0x0F00) >> 8;
+            u16 RegisterY = (Instruction & 0x00F0) >> 4;
+            u16 InstructionSecondDecode = (Instruction & 0x000F);
+
+            switch(InstructionSecondDecode)
+            {
+                case 0:
+                {
+
+                } break;
+
+                case 1:
+                {
+
+                } break;
+
+                case 2:
+                {
+
+                } break;
+
+                case 3:
+                {
+
+                } break;
+
+                case 4:
+                {
+
+                } break;
+
+                case 5:
+                {
+
+                } break;
+
+                case 6:
+                {
+
+                } break;
+
+                case 7:
+                {
+
+                } break;
+
+                case 0xE:
+                {
+
+                } break;
+            }
+        } break;
+
+        case 9:
+        {
+            // NOTE(miha): Skips the next instruction if VX does not equal VY.
+            u16 RegisterV = (Instruction & 0x0F00) >> 8;
+            u16 RegisterY = (Instruction & 0x00F0) >> 4;
+
+            if(Chip8->Registers.E[RegisterV] != Chip8->Registers.E[RegisterY])
+            {
+                *PC += 2;
+            }
+
+        } break;
+
+        case 0xA:
+        {
+            // NOTE(miha): Sets I to the address NNN.
+            u16 Address = (Instruction & 0x0FFF);
+            Chip8->Registers.I = Address;
+        } break;
+
+        case 0xB:
+        {
+            // NOTE(miha): Jumps to the address NNN plus V0.
+            u16 Number = (Instruction & 0x0FFF);
+            *PC = Chip8->Registers.V0 + Number;
+        } break;
+
+        case 0xC:
+        {
+            u16 Register = ((Instruction & 0x0F00) >> 8);
+            u16 Number = (Instruction & 0x00FF);
+            u16 RandomNumber = rand() & Number;
+            Chip8->Registers.E[Register] = RandomNumber;
+        } break;
+
+        case 0xD:
+        {
+            // NOTE(miha): Draws a sprite at coordinate (VX, VY) that has a
+            // width of 8 pixels and a height of N+1 pixels. Each row of 8
+            // pixels is read as bit-coded starting from memory location I; I
+            // value does not change after the execution of this instruction.
+            // As described above, VF is set to 1 if any screen pixels are
+            // flipped from set to unset when the sprite is drawn, and to 0 if
+            // that does not happen.
+            
+            u16 RegisterX = ((Instruction & 0x0F00) >> 8);
+            u16 RegisterY = ((Instruction & 0x00F0) >> 4);
+            u16 Number = (Instruction & 0x000F);
+            u16 BitmapAddress = Chip8->Registers.I;
+            // TODO(miha): Function for drawin bitmap on the screen (buffer).
+
+        } break;
+
+        case 0xE:
+        {
+            u16 RegisterX = ((Instruction & 0x0F00) >> 8);
+            u16 InstructionSecondDecode = ((Instruction & 0x00F0) >> 4);
+            
+            if(InstructionSecondDecode == 0x9)
+            {
+                // NOTE(miha): Skips the next instruction if the key stored in
+                // VX is pressed.
+
+            }
+            else if(InstructionSecondDecode == 0xA)
+            {
+
+            }
+        } break;
+
+        case 0xF:
+        {
+            u16 RegisterX = ((Instruction & 0x0F00) >> 8);
+            u16 InstructionSecondDecode = ((Instruction & 0x00F0) >> 4);
+            u16 InstructionSecondDecode = (Instruction & 0x000F);
+
+        } break;
+
+        default:
+        {
+            // TODO(miha): Error handling.
+
+        } break;
+    }
 
 }
 
@@ -315,33 +562,29 @@ main(int ArgumentNumber, char *Arguments[])
         GLFWClearScreen(&Window);
 
         // TODO: Move this to the new function
-        if (glfwGetKey(Window.GLFWWindow, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(Window.GLFWWindow, GLFW_TRUE);
-
-        // TODO: Can we somehow use this function?
-        //     glfwGetTime()
-        //     glfwSwapInterval(1)
 
         ProcessInput(&Window, &Chip8);
         DrawDisplay(&Window, &Chip8);
-        // contorl unit
-        // delay 60Hz
 
-        // NOTE(miha): First instruction is fetched from 0x200.
         // NOTE(miha): Instruction is long 2 bytes and is stored in big endian
         // fashion.
+
+        // Fetch
+        // Decode
+        // Execute
         FetchDecodeExecute(&Chip8);
-
-        // NOTE(miha): We need to implement GetKey, stalls the instuction until
+        
+        // TODO(miha): We need to implement GetKey, stalls the instuction until
         // key is pressed.
-
-        // TODO(miha): Use glfwGetTime to implement 60 Hz loop.
-        double Time = glfwGetTime();
-        u64 TimerFrequency = glfwGetTimerFrequency();
-        u64 TimerValue = glfwGetTimerValue();
-
         PrintKeyboard(&Chip8);
         GLFWUpdate(&Window);
+
+        // NOTE(miha): Decrease timers.
+        if(Chip8.SoundTimer.Value)
+            Chip8.SoundTimer.Value--;
+
+        if(Chip8.DelayTimer.Value)
+            Chip8.DelayTimer.Value--;
 
         double FrameEndTime = glfwGetTime();
         while(FrameEndTime < (FrameStartTime + TimeTarget))
