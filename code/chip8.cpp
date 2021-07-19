@@ -16,6 +16,7 @@ GLFWInit()
 {
     if(!glfwInit())
     {
+        Assert(0);
         printf("GLFW init failed\n");
     }
 }
@@ -23,9 +24,13 @@ GLFWInit()
 void
 GLFWCreateWindow(glfw_window *Window)
 {
+    Assert(Window->Width);
+    Assert(Window->Height);
+    Assert(Window->Title);
     Window->GLFWWindow = glfwCreateWindow(Window->Width, Window->Height,
                                           Window->Title, NULL, NULL);
 
+    Assert(Window->GLFWWindow);
     if (!Window->GLFWWindow)
     {
         printf("GLFW window or OpenGL context creation failed\n");
@@ -98,7 +103,6 @@ DrawDisplay(glfw_window *Window, chip8 *Chip8)
 void
 MakeRandomPattern(chip8 *Chip8)
 {    
-    srand((u32) time(NULL));
     for(i32 Y = 0; Y < 32; ++Y)
     {
         for(i32 X = 0; X < 64; ++X)
@@ -118,7 +122,6 @@ PrintKeyboard(chip8 *Chip8)
             printf("Key %d is pressed\n", Chip8->Keyboard.Keys[KeyIndex].KeyCode);
         }
     }
-
 }
 
 void
@@ -209,6 +212,18 @@ InitBuildInCharacters(chip8 *Chip8)
 }
 
 void
+ClearDisplayBits(chip8 *Chip8)
+{
+    for(int Y = 0; Y < 32; ++Y)
+    {
+        for(int X = 0; X < 32; ++X)
+        {
+            Chip8->Display[64 * Y + X] = 0;
+        }
+    }
+}
+
+void
 FetchDecodeExecute(chip8 *Chip8)
 {
     // NOTE(miha): Fetch instruction.
@@ -216,71 +231,67 @@ FetchDecodeExecute(chip8 *Chip8)
     u8 InstuctionFirstHalf = Chip8->Memory[*PC];
     u8 InstuctionSecondHalf = Chip8->Memory[*PC + 1];
     u16 Instruction = InstuctionFirstHalf << 8 | InstuctionSecondHalf;
-    // TODO(miha): Are we sure we want to increment PC here? What about
-    // branching instructions?...
     *PC += 2;
 
-    // TODO: Decode instuction
+    u16 InstructionFirstDecode = ((Instruction & 0xF000) >> 12);
 
-    u16 InstructionMSB = ((Instruction & 0xF000) >> 12);
-
-    // NOTE(miha): Some instruction 
-    switch(InstructionMSB)
+    // NOTE(miha): Some instruction need multiple levels of decode... TODO
+    switch(InstructionFirstDecode)
     {
         case 0:
         {
-            i16 InstructionSecondDecode = Instruction & 0x00F0;
+        i16 InstructionSecondDecode = Instruction & 0x00F0 >> 4;
 
             switch(InstructionSecondDecode)
             {
                 case 0xE:
                 {
-                    i16 InstructionThridDecode = Instruction & 0x000F;
+                    i16 InstructionThirdDecode = Instruction & 0x000F;
 
-                    if(InstructionThridDecode == 0x0)
+                    if(InstructionThirdDecode == 0x0)
                     {
                         // NOTE(miha): Opcode 00E0 - clears the screen.
-                        // TODO(miha): Function to clear the screen - set all
-                        // bits in buffer to 0.
+                        ClearDisplayBits(Chip8);
                     }
-                    else if (InstructionThridDecode == 0xE)
+                    else if (InstructionThirdDecode == 0xE)
                     {
                         // NOTE(miha): Opcode 00EE - returns from subroutine.
-                        // TODO(miha): Do we need to pop address from stack or
-                        // someting?
-
+                        Chip8->Registers.SP--;
+                        *PC = Chip8->Stack[Chip8->Registers.SP];
                     }
                 } break;
 
                 default:
                 {
-                    // NOTE(miha): 0NNN opcode.
+                    // NOTE(miha): Opcode 0NNN - calls machine code routine at
+                    // address NNN. Not necessary for most ROMs.
                     u16 Number = Instruction & 0x0FFF;
-                    // TODO(miha): Implement this opcode
-
+                    // TODO(miha): Implement this opcode, but is no needed on
+                    // many emulators to run games.
                 } break;
             }
-
         } break;
 
         case 1:
         {
-            // NOTE(miha): Jump to address NNN.
+            // NOTE(miha): Opcode 1NNN - jump to address NNN.
             u16 Address = Instruction & 0x0FFF;
             Chip8->Registers.PC = Address;
         } break;
 
         case 2:
         {
-            // NOTE(miha): Call subroutine at NNN.
-            // TODO(miha): Do we just set PC to this address or do we have to
-            // put someting on the stack?
+            // NOTE(miha): Opcode 2NNN - calls subroutine at NNN.
             u16 Subroutine = Instruction & 0x0FFF;
+            Chip8->Stack[Chip8->Registers.SP] = *PC;
+            Chip8->Registers.SP++;
+            *PC = Subroutine;
         } break;
 
         case 3:
         {
-            // NOTE(miha): Skips the next instruction if VX equals NN.
+            // NOTE(miha): Opcode 3XNN - skips the next instruction if VX
+            // equals NN.
             u16 Register = (Instruction & 0x0F00) >> 8;
             u16 Number = Instruction & 0x00FF;
 
@@ -292,7 +303,7 @@ FetchDecodeExecute(chip8 *Chip8)
 
         case 4:
         {
-            // NOTE(miha): Skips the next instruction if VX does not equal NN.
+            // NOTE(miha): 4XNN - skips the next instruction if VX does not equal NN.
             u16 Register = (Instruction & 0x0F00) >> 8;
             u16 Number = Instruction & 0x00FF;
 
@@ -304,7 +315,7 @@ FetchDecodeExecute(chip8 *Chip8)
 
         case 5:
         {
-            // NOTE(miha): Skips the next instruction if VX equals VY.
+            // NOTE(miha): Opcode 5XY0 skips the next instruction if VX equals VY.
             u16 RegisterV = (Instruction & 0x0F00) >> 8;
             u16 RegisterY = (Instruction & 0x00F0) >> 4;
 
@@ -316,18 +327,18 @@ FetchDecodeExecute(chip8 *Chip8)
 
         case 6:
         {
-            // NOTE(miha): Set VX to NN.
+            // NOTE(miha): Opcode 6XNN - set VX to NN.
             u16 Register = (Instruction & 0x0F00) >> 8;
             u16 Number = Instruction & 0x00FF;
-            Chip8->Registers.E[Register] = Number;
+            Chip8->Registers.E[Register] = (u8) Number;
         } break;
 
         case 7:
         {
-            // NOTE(miha): Adds NN to VX.
+            // NOTE(miha): Opcode 7XNN - adds NN to VX.
             u16 Register = (Instruction & 0x0F00) >> 8;
             u16 Number = Instruction & 0x00FF;
-            Chip8->Registers.E[Register] += Number;
+            Chip8->Registers.E[Register] += (u8) Number;
         } break;
 
         case 8:
@@ -340,54 +351,112 @@ FetchDecodeExecute(chip8 *Chip8)
             {
                 case 0:
                 {
-
+                    // NOTE(miha): Opcode 8XY0 - sets VX to the value of VY.
+                    Chip8->Registers.E[RegisterX] = Chip8->Registers.E[RegisterY];
                 } break;
 
                 case 1:
                 {
-
+                    // NOTE(miha): Opcode 8XY1 - sets VX to VX or VY (Bitwise
+                    // OR operation).
+                    Chip8->Registers.E[RegisterX] |=  Chip8->Registers.E[RegisterY];
                 } break;
 
                 case 2:
                 {
-
+                    // NOTE(miha): Opcode 8XY2 - sets VX to VX and VY (Bitwise
+                    // AND operation).
+                    Chip8->Registers.E[RegisterX] &=  Chip8->Registers.E[RegisterY];
                 } break;
 
                 case 3:
                 {
-
+                    // NOTE(miha): Opcode 8XY3 - sets VX to VX xor VY.
+                    Chip8->Registers.E[RegisterX] ^=  Chip8->Registers.E[RegisterY];
                 } break;
 
                 case 4:
                 {
+                    // NOTE(miha): Opcode 8XY4 - adds VY to VX. VF is set to 0
+                    // when there's a borrow, and 1 when there is not.
+                    u16 Result = Chip8->Registers.E[RegisterX] + Chip8->Registers.E[RegisterY];
 
+                    // NOTE(miha): Check for borrow.
+                    if(Result > 0xFF)
+                    {
+                        Chip8->Registers.VF = 1;
+                    }
+                    else
+                    {
+                        Chip8->Registers.VF = 0;
+                    }
+
+                    Chip8->Registers.E[RegisterX] = (u8) (Result & 0xFF);
                 } break;
 
                 case 5:
                 {
+                    // NOTE(miha): Opcode 8XY5 - VY is subtracted from VX. VF
+                    // is set to 0 when there's a borrow, and 1 when there is
+                    // not.
+                    u16 Result = Chip8->Registers.E[RegisterX] - Chip8->Registers.E[RegisterY];
 
+                    // NOTE(miha): Check for borrow.
+                    if(Chip8->Registers.E[RegisterX] > Chip8->Registers.E[RegisterY])
+                    {
+                        Chip8->Registers.VF = 1;
+                    }
+                    else
+                    {
+                        Chip8->Registers.VF = 0;
+                    }
+
+                    Chip8->Registers.E[RegisterX] = (u8) Result;
                 } break;
 
                 case 6:
                 {
-
+                    // NOTE(miha): Opcode 8XY6 - Stores the least significant
+                    // bit of VX in VF and then shifts VX to the right by 1.
+                    u8 LSB = Chip8->Registers.E[RegisterX] & 0x1;
+                    Chip8->Registers.VF = LSB;
+                    Chip8->Registers.E[RegisterX] >>= 1;
                 } break;
 
                 case 7:
                 {
+                    // NOTE(miha): Opcode 8XY7 - sets VX to VY minus VX. VF is
+                    // set to 0 when there's a borrow, and 1 when there is not.
+                    u16 Result = Chip8->Registers.E[RegisterY] - Chip8->Registers.E[RegisterX];
 
+                    // NOTE(miha): Check for borrow.
+                    if(Chip8->Registers.E[RegisterY] > Chip8->Registers.E[RegisterX])
+                    {
+                        Chip8->Registers.VF = 1;
+                    }
+                    else
+                    {
+                        Chip8->Registers.VF = 0;
+                    }
+
+                    Chip8->Registers.E[RegisterX] = (u8) Result;
                 } break;
 
                 case 0xE:
                 {
-
+                    // NOTE(miha): Opcode 8XYE - stores the most significant
+                    // bit of VX in VF and then shifts VX to the left by 1.
+                    u8 MSB = (Chip8->Registers.E[RegisterX] & (0x1 << 7)) >> 7;
+                    Chip8->Registers.VF = MSB;
+                    Chip8->Registers.E[RegisterX] <<= 1;
                 } break;
             }
         } break;
 
         case 9:
         {
-            // NOTE(miha): Skips the next instruction if VX does not equal VY.
+            // NOTE(miha): Opcode 9XY0 - skips the next instruction if VX does
+            // not equal VY.
             u16 RegisterV = (Instruction & 0x0F00) >> 8;
             u16 RegisterY = (Instruction & 0x00F0) >> 4;
 
@@ -395,47 +464,72 @@ FetchDecodeExecute(chip8 *Chip8)
             {
                 *PC += 2;
             }
-
         } break;
 
         case 0xA:
         {
-            // NOTE(miha): Sets I to the address NNN.
+            // NOTE(miha): Opcode ANNN - sets I to the address NNN.
             u16 Address = (Instruction & 0x0FFF);
             Chip8->Registers.I = Address;
         } break;
 
         case 0xB:
         {
-            // NOTE(miha): Jumps to the address NNN plus V0.
+            // NOTE(miha): Opcode BNNN - jumps to the address NNN plus V0.
             u16 Number = (Instruction & 0x0FFF);
             *PC = Chip8->Registers.V0 + Number;
         } break;
 
         case 0xC:
         {
+            // NOTE(miha): Opcode CXNN - sets VX to the result of a bitwise and
+            // operation on a random number (Typically: 0 to 255) and NN.
             u16 Register = ((Instruction & 0x0F00) >> 8);
             u16 Number = (Instruction & 0x00FF);
             u16 RandomNumber = rand() & Number;
-            Chip8->Registers.E[Register] = RandomNumber;
+            Chip8->Registers.E[Register] = (u8) RandomNumber;
         } break;
 
         case 0xD:
         {
-            // NOTE(miha): Draws a sprite at coordinate (VX, VY) that has a
-            // width of 8 pixels and a height of N+1 pixels. Each row of 8
-            // pixels is read as bit-coded starting from memory location I; I
-            // value does not change after the execution of this instruction.
-            // As described above, VF is set to 1 if any screen pixels are
-            // flipped from set to unset when the sprite is drawn, and to 0 if
-            // that does not happen.
+            // NOTE(miha): Opcode DXYN - draws a sprite at coordinate (VX, VY)
+            // that has a width of 8 pixels and a height of N+1 pixels. Each
+            // row of 8 pixels is read as bit-coded starting from memory
+            // location I; I value does not change after the execution of this
+            // instruction.  As described above, VF is set to 1 if any screen
+            // pixels are flipped from set to unset when the sprite is drawn,
+            // and to 0 if that does not happen.
             
             u16 RegisterX = ((Instruction & 0x0F00) >> 8);
             u16 RegisterY = ((Instruction & 0x00F0) >> 4);
             u16 Number = (Instruction & 0x000F);
-            u16 BitmapAddress = Chip8->Registers.I;
-            // TODO(miha): Function for drawin bitmap on the screen (buffer).
 
+            // NOTE(miha): At the start there is no collision.
+            Chip8->Registers.VF = 0;
+
+            u8 XPos = Chip8->Registers.E[RegisterX] % 64;
+            u8 YPos = Chip8->Registers.E[RegisterY] % 32;
+
+            for(u16 Y = 0; Y < Number; ++Y)
+            {
+                u16 SpriteByte = Chip8->Memory[Chip8->Registers.I + Y];
+                for(u16 X = 0; X < 8; ++X)
+                {
+                    u8 DisplayPixel = Chip8->Display[(YPos + Y) * 64 + (XPos + X)];
+                    // TODO(miha): Dragons be dragons
+                    u8 SpritePixel = SpriteByte & (0x80 >> X);
+
+                    if(SpritePixel)
+                    {
+                        if(DisplayPixel)
+                        {
+                            Chip8->Registers.VF = 1;
+                        }
+
+                        Chip8->Display[(YPos + Y) * 64 + (XPos + X)] ^= 1;
+                    }
+                }
+            }
         } break;
 
         case 0xE:
@@ -445,13 +539,24 @@ FetchDecodeExecute(chip8 *Chip8)
             
             if(InstructionSecondDecode == 0x9)
             {
-                // NOTE(miha): Skips the next instruction if the key stored in
-                // VX is pressed.
-
+                // NOTE(miha): Opcode EX9E - skips the next instruction if the
+                // key stored in VX is pressed.
+                chip8_key Key = Chip8->Keyboard.Keys[RegisterX];
+                if(Key.IsPressed)
+                {
+                    *PC += 2;
+                }
             }
             else if(InstructionSecondDecode == 0xA)
             {
-
+                // NOTE(miha): Opcode EXA1 - skips the next instruction if the
+                // key stored in VX is not pressed (Usually the next
+                // instruction is a jump to skip a code block).
+                chip8_key Key = Chip8->Keyboard.Keys[RegisterX];
+                if(!Key.IsPressed)
+                {
+                    *PC += 2;
+                }
             }
         } break;
 
@@ -459,7 +564,119 @@ FetchDecodeExecute(chip8 *Chip8)
         {
             u16 RegisterX = ((Instruction & 0x0F00) >> 8);
             u16 InstructionSecondDecode = ((Instruction & 0x00F0) >> 4);
-            u16 InstructionSecondDecode = (Instruction & 0x000F);
+            u16 InstructionThirdDecode = (Instruction & 0x000F);
+
+            switch(InstructionSecondDecode)
+            {
+                case 0:
+                {
+                    if(InstructionThirdDecode == 7)
+                    {
+                        // NOTE(miha): Opcode FX07 - sets VX to the value of
+                        // the delay timer.
+                        Chip8->Registers.E[RegisterX] = (u8) Chip8->DelayTimer.Value;
+                    }
+                    else if(InstructionThirdDecode == 0xA)
+                    {
+                        // NOTE(miha): Opcode FX0A - a key press is awaited,
+                        // and then stored in VX (Blocking Operation. All
+                        // instruction halted until next key event).
+                        b32 KeyPressed = 0; 
+                        for(u16 I = 0; I < Chip8->Keyboard.NumberOfKeys; ++I)
+                        {
+                            if(Chip8->Keyboard.Keys[I].IsPressed)
+                            {
+                                Chip8->Registers.E[I] = (u8) I;
+                                KeyPressed = 1;
+                                break;
+                            }
+                        }
+
+                        if(!KeyPressed)
+                        {
+                            *PC -= 2;
+                        }
+                    }
+                } break;
+
+                case 1:
+                {
+                    if(InstructionThirdDecode == 5)
+                    {
+                        // NOTE(miha): FX15 - sets the delay timer to VX.
+                        Chip8->DelayTimer.Value = Chip8->Registers.E[RegisterX];
+                    }
+                    else if(InstructionThirdDecode == 8)
+                    {
+                        // NOTE(miha): FX18 - sets the sound timer to VX.
+                        Chip8->SoundTimer.Value = Chip8->Registers.E[RegisterX];
+                    }
+                    else if(InstructionThirdDecode == 0xE)
+                    {
+                        // NOTE(miha): FX1E - adds VX to I. VF is not affected.
+                        Chip8->Registers.I += Chip8->Registers.E[RegisterX];
+                    }
+                } break;
+
+                case 2:
+                {
+                    // NOTE(miha): Opcode FX29 - sets I to the location of the
+                    // sprite for the character in VX. Characters 0-F (in
+                    // hexadecimal) are represented by a 4x5 font.
+                    u16 Address = 0x1B0 + (5 * RegisterX);
+                    Chip8->Registers.I = Address;
+                } break;
+
+                case 3:
+                {
+                    // NOTE(miha): Opcode FX33 - stores the binary-coded
+                    // decimal representation of VX, with the most significant
+                    // of three digits at the address in I, the middle digit at
+                    // I plus 1, and the least significant digit at I plus 2
+                    // (In other words, take the decimal representation of VX,
+                    // place the hundreds digit in memory at location in I, the
+                    // tens digit at location I+1, and the ones digit at
+                    // location I+2.).
+                    u16 Number = Chip8->Registers.E[RegisterX];
+                    u8 LSBDigit = Number % 10;
+                    Number /= 10;
+                    u8 MiddleDigit = Number % 10;
+                    Number /= 10;
+                    u8 MSBDigit = Number % 10;
+
+                    Chip8->Memory[Chip8->Registers.I] = MSBDigit;
+                    Chip8->Memory[Chip8->Registers.I + 1] = MiddleDigit;
+                    Chip8->Memory[Chip8->Registers.I + 2] = LSBDigit;
+                } break;
+
+                case 5:
+                {
+                    // NOTE(miha): Opcode FX55 - stores V0 to VX (including VX)
+                    // in memory starting at address I. The offset from I is
+                    // increased by 1 for each value written, but I itself is
+                    // left unmodified.
+
+                    u16 Index = Chip8->Registers.I;
+                    for(u16 I = 0; I <= RegisterX; ++I)
+                    {
+                        Chip8->Memory[Index + I] = (u8) Chip8->Registers.E[I];
+                    }
+                } break;
+
+                case 6:
+                {
+                    // NOTE(miha): Opcode FX65 - fills V0 to VX (including VX)
+                    // with values from memory starting at address I. The
+                    // offset from I is increased by 1 for each value written,
+                    // but I itself is left unmodified.
+                    u16 Index = Chip8->Registers.I;
+                    for(u16 I = 0; I <= RegisterX; ++I)
+                    {
+                        Chip8->Registers.E[I] = (u8) Chip8->Memory[Index + I];
+                    }
+                } break;
+
+            }
 
         } break;
 
@@ -540,43 +757,38 @@ main(int ArgumentNumber, char *Arguments[])
     // NOTE(miha): First instruction is fetched from memory location 0x200.
     Chip8.Registers.PC = 0x200;
 
-    MakeRandomPattern(&Chip8);
+    // NOTE(miha): Set random number generators seed.
+    srand((u32) time(NULL));
 
+    // MakeRandomPattern(&Chip8);
+    // TODO(miha): Refractor these function names to have Init at the start or
+    // at the end.
     GLFWInit();
     GLFWCreateWindow(&Window);
     KeyboardInit(&Window, &Chip8);
     InitBuildInCharacters(&Chip8);
     ReadGameIntoRAM(&Chip8, &GameFile, GameName);
-
     // TODO(miha): We need to init sound - a simple buzzer.
 
     glMatrixMode(GL_PROJECTION);
-    glOrtho(0, Window.Width, 0, Window.Height, -1, 1);
+    glOrtho(0, Window.Width, Window.Height, 0, -1, 1);
 
     // NOTE(miha): Time target is 60 times per second (60 Hz).
-    double TimeTarget = 1.0f / 60.0f; 
-    // NOTE(miha): Main loop. All the magic happens here.
+    double TimeTarget = 1.0f / 200.0f; 
+
     while(!glfwWindowShouldClose(Window.GLFWWindow))
     {
         double FrameStartTime = glfwGetTime();
         GLFWClearScreen(&Window);
 
-        // TODO: Move this to the new function
-
         ProcessInput(&Window, &Chip8);
-        DrawDisplay(&Window, &Chip8);
 
         // NOTE(miha): Instruction is long 2 bytes and is stored in big endian
         // fashion.
-
-        // Fetch
-        // Decode
-        // Execute
         FetchDecodeExecute(&Chip8);
-        
-        // TODO(miha): We need to implement GetKey, stalls the instuction until
-        // key is pressed.
-        PrintKeyboard(&Chip8);
+        DrawDisplay(&Window, &Chip8);
+
+        // PrintKeyboard(&Chip8);
         GLFWUpdate(&Window);
 
         // NOTE(miha): Decrease timers.
@@ -593,11 +805,10 @@ main(int ArgumentNumber, char *Arguments[])
         }
 
         double MSPerFrame = (FrameEndTime - FrameStartTime) * 1000;
-        printf("%f\n", MSPerFrame);
+        // printf("%f\n", MSPerFrame);
     }
 
     printf("hello world!\n");
 
     GLFWTerminate();
-    return 0;
 }

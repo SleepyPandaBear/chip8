@@ -24,6 +24,25 @@ typedef int64_t i64;
 
 typedef u32 b32;
 
+#define global_variable static
+#define local_persist static
+#define internal static
+
+// NOTE(miha): In assert we put expression we want to be true (eg.
+// Assert(Window) checks if Window is created).
+#if DEBUG
+#define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
+#else
+#define Assert(Expression)
+#endif
+
+#define Kilobytes(Value) ((Value)*1024LL)
+#define Megabytes(Value) (Kilobytes(Value)*1024LL)
+#define Gigabytes(Value) (Megabytes(Value)*1024LL)
+#define Terabytes(Value) (Gigabytes(Value)*1024LL)
+
+#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
+
 struct glfw_window
 {
     GLFWwindow *GLFWWindow;
@@ -33,7 +52,6 @@ struct glfw_window
 
 };
 
-// TODO(miha): I dont know the size of void * registers
 struct chip8_registers
 {
     union
@@ -59,11 +77,12 @@ struct chip8_registers
 
             u16 I;
             u16 PC;
-            u8 SP;
+            u16 SP;
         };
 
         // CARE(miha): With array we can only acces first 16 registers..
-        u16 E[22];
+        // TODO(miha): Why is this u16 and not u8?
+        u8 E[22];
     };
 
 };
@@ -110,15 +129,18 @@ struct chip8_keyboard
 
 struct chip8_timer
 {
-    i32 Value;
+    u16 Value;
 };
 
 struct chip8
 {
     u8 Memory[4096];
+    // TODO(miha): Get right stack size...
+    u16 Stack[128];
     u8 Display[64 * 32];
     chip8_registers Registers;
     chip8_keyboard Keyboard;
+    // TODO(miha): Do we even need struct timer? WSe can just store u32 here..
     chip8_timer SoundTimer;
     chip8_timer DelayTimer;
 };
